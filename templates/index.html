@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xpile!</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script>
+        function switchTab(tabName) {
+            document.querySelectorAll(".tab-content").forEach(tab => tab.classList.remove("active"));
+            document.querySelectorAll(".tab").forEach(tab => tab.classList.remove("active"));
+            document.getElementById(tabName).classList.add("active");
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add("active");
+        }
+
+        async function transpileFiles() {
+            const response = await fetch("/files");
+            const data = await response.json();
+            const transpiledFileList = document.getElementById("transpiledFileList");
+            document.getElementById("response-wrapper").style.visibility = "visible";
+
+            for (const file of data.files) {
+                console.log("Transpiling file..." + file);
+
+                let response = await fetch("/xpile-file", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file: file })
+                });
+                let data = await response.json();
+                console.log("Data: " + JSON.stringify(data));
+
+                // Add transpiled file to list
+                const listItem = document.createElement("li");
+                listItem.className = "list-group-item d-flex.0";
+                listItem.textContent = data["file"];
+                transpiledFileList.appendChild(listItem);
+            }
+        }
+    </script>
+</head>
+<body onload="initializeForm()">
+    <div class="container">
+        <div class="tabs">
+            <div class="tab active" data-tab="chatTab" onclick="switchTab('chatTab')">Code</div>
+            <div class="tab" data-tab="formTab" onclick="switchTab('formTab')">Data</div>
+        </div>
+
+        <div id="chatTab" class="tab-content active">
+            <h1>Databricks Transpiler</h1>
+            
+            <div id="source-dialect-form-item" class="form-item">
+                <label for="source-dialect" id="source-dialect-label" class="form-label">Source dialect:</label>
+                <select id="source-dialect" placeholder="Source dialect">
+                    <option value="snowflake">Snowflake</option>
+                </select>
+            </div>
+            <div id="drop-area-wrapper" class="form-item">
+                <div id="drop-area" class="drop-area">
+                    <p>Drag & Drop files here or click to upload multiple files</p>
+                    <input type="file" id="fileInput" multiple hidden>
+                </div>
+                <p id="uploadStatus"></p>
+                <label for="fileList" class="form-label">Uploaded files:</label>
+                <ul id="fileList" class="list-group"></ul>
+            </div>
+
+            <button onclick="transpileFiles()">Xpile!</button>
+            
+            <div name="response-wrapper" id="response-wrapper" class="form-item">
+                <h3 style="text-align: left;">Transpiled files:</h3>
+                <ul id="transpiledFileList" class="list-group"></ul>
+                <button onclick="alert('Deploying as workspace notebook')">Deploy as notebook</button>
+                <button onclick="alert('Deploying as workflow')">Deploy as workflow</button>
+            </div>
+        </div>
+
+        <div id="formTab" class="tab-content">
+            <h1>Database Connection</h1>
+            <input type="text" id="connectionString" placeholder="Connection String">
+            <input type="text" id="username" placeholder="Username">
+            <input type="password" id="password" placeholder="Password">
+            <input type="text" id="tableName" placeholder="Table Name">
+            <br/>
+            <button onclick="submitForm()">Connect</button>
+        </div>
+    </div>
+
+    <script>
+        function submitForm() {
+            const connectionString = document.getElementById("connectionString").value;
+            const username = document.getElementById("username").value;
+            const password = document.getElementById("password").value;
+            const tableName = document.getElementById("tableName").value;
+
+            console.log("Form submitted with:", { connectionString, username, password, tableName });
+            alert("Form submitted!");
+        }
+
+        function initializeForm() {
+            document.getElementById("response-wrapper").style.visibility = "hidden";
+        }
+
+        const dropArea = document.getElementById("drop-area");
+        const fileInput = document.getElementById("fileInput");
+        const uploadStatus = document.getElementById("uploadStatus");
+        const fileList = document.getElementById("fileList");
+
+        dropArea.addEventListener("click", () => fileInput.click());
+
+        dropArea.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            dropArea.classList.add("dragover");
+        });
+
+        dropArea.addEventListener("dragleave", () => {
+            dropArea.classList.remove("dragover");
+        });
+
+        dropArea.addEventListener("drop", (event) => {
+            event.preventDefault();
+            dropArea.classList.remove("dragover");
+            uploadFiles(event.dataTransfer.files);
+        });
+
+        fileInput.addEventListener("change", () => {
+            uploadFiles(fileInput.files);
+        });
+
+        async function uploadFiles(files) {
+            const formData = new FormData();
+            for (const file of files) {
+                formData.append("files", file);
+            }
+
+            const response = await fetch("/upload-file", {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+            uploadStatus.innerText = result.message || result.error;
+
+            if (result.files) {
+                loadFiles();
+            }
+        }
+
+        async function loadFiles() {
+        const response = await fetch("/files");
+        const data = await response.json();
+        const fileList = document.getElementById("fileList");
+        fileList.innerHTML = "";
+
+        data.files.forEach(file => {
+            const listItem = document.createElement("li");
+            listItem.className = "list-group-item d-flex.0";
+            listItem.innerHTML = `
+                <span>${file}</span>
+                <button class="btn btn-sm btn-danger" onclick="deleteFile('${file}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            fileList.appendChild(listItem);
+        });
+    }
+
+        async function deleteFile(filename) {
+            const response = await fetch("/delete-file", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ filename })
+            });
+
+            const result = await response.json();
+            if (result.message) {
+                loadFiles();
+            } else {
+                alert(result.error);
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", loadFiles);        
+    </script>
+</body>
+</html>
