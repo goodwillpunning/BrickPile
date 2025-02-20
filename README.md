@@ -1,2 +1,2 @@
-# xpile
-A Databricks transpiler.
+# Xpile
+(pronounced "Transpile") A Databricks transpiler.
